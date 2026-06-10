@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
+
+/* Light theme overrides for legacy dark utility classes */
+.bg-neutral-900 { @apply bg-white  }
+.bg-neutral-950 { @apply bg-slate-50  }
+.bg-neutral-900\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+.bg-neutral-900\/60 { background-color: rgba(241, 245, 249, 0.6) !important; }
+.bg-neutral-900\/10 { background-color: rgba(241, 245, 249, 0.1) !important; }
+.bg-neutral-950\/80 { background-color: rgba(241, 245, 249, 0.8) !important; }
+.bg-neutral-950\/60 { background-color: rgba(241, 245, 249, 0.6) !important; }
+.bg-neutral-950\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+.bg-neutral-950\/30 { background-color: rgba(241, 245, 249, 0.3) !important; }
+.bg-neutral-950\/20 { background-color: rgba(241, 245, 249, 0.2) !important; }
+.border-neutral-900 { @apply border-slate-200  }
+.border-neutral-850 { @apply border-slate-200  }
+.border-neutral-800 { @apply border-slate-300  }
+.border-neutral-900\/60 { border-color: rgba(226, 232, 240, 0.6) !important; }
+.text-neutral-100 { @apply text-slate-900 }
+.text-neutral-150 { @apply text-slate-900  }
+.text-neutral-200 { @apply text-slate-700  }
+.text-neutral-205 { @apply text-slate-900  }
+.text-neutral-250 { @apply text-slate-700  }
+.text-neutral-300 { @apply text-slate-600  }
+.text-neutral-350 { @apply text-slate-600 }
+.text-neutral-400 { @apply text-slate-500  }
+.text-neutral-450 { @apply text-slate-500  }
+.text-neutral-500 { @apply text-slate-500  }
+.text-neutral-550 { @apply text-slate-600 }
+.text-neutral-600 { @apply text-slate-700  }
+.text-neutral-605 { @apply text-slate-700  }
+.bg-neutral-805 { @apply bg-slate-100  }
+.from-neutral-900 { @apply from-slate-200 }
+.from-neutral-950 { @apply from-slate-100  }
+.to-neutral-950 { @apply to-slate-100  }
+.hover\:bg-neutral-900\/10:hover { background-color: rgba(241, 245, 249, 0.1) !important; }
+.hover\:bg-neutral-900\/40:hover { background-color: rgba(241, 245, 249, 0.4) !important; }
+.hover\:bg-neutral-900\/60:hover { background-color: rgba(241, 245, 249, 0.6) !important; }
+
