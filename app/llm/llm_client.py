@@ -1,141 +1,355 @@
-import os
 import json
-import re
 import logging
-from typing import Dict, Any
+import re
+from typing import Any, Dict
 from openai import OpenAI
 from core.config import settings
 
 logger = logging.getLogger("VoIPAnalyzer")
 
-def analyze_voip_summary_with_ai(summary_json: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Sends the compact structured VoIP summary to the LLM (OpenAI-compatible)
-    and returns a structured root-cause analysis that conforms to the requested schema.
-    """
+
+REQUIRED_FIELDS = {
+    "overall_health",
+    "call_quality_score",
+    "root_causes",
+    "critical_findings",
+    "detected_issues",
+    "recommendations",
+    "executive_summary",
+}
+
+
+def analyze_voip_summary_with_ai(
+    summary_json: Dict[str, Any]
+) -> Dict[str, Any]:
+
     api_key = settings.OPENAI_API_KEY
     base_url = settings.OPENAI_BASE_URL
     model = settings.OPENAI_MODEL
 
-    system_prompt = (
-        "You are a senior VoIP engineer with 15 years of experience in: "
-        "Contact Centers, SIP, RTP, WebRTC, SBC, Asterisk, FreeSWITCH, Kamailio, and OpenSIPS.\n"
-        "Analyze the VoIP traffic summary provided by the user. "
-        "Identify probable root causes for call quality degrade, NAT/Firewall traversal mismatches, failed registrations, or RTP gaps.\n"
-        "Return ONLY valid JSON that matches the exact structure specified below. "
-        "Do NOT include any markdown code blocks, do NOT write ```json, do NOT output explanations before or after the JSON.\n\n"
-        "Schema:\n"
-        "{\n"
-        "  \"overall_health\": \"Good/Fair/Critical\",\n"
-        "  \"call_quality_score\": 0-100,\n"
-        "  \"root_causes\": [\"List of identified root causes\"],\n"
-        "  \"critical_findings\": [\"Crucial issues that must be addressed\"],\n"
-        "  \"detected_issues\": [\"Any additional detected anomalies\"],\n"
-        "  \"recommendations\": [\"Actionable, clear recommendations (e.g. adjust NAT helper, edit codec priorities)\"],\n"
-        "  \"executive_summary\": \"A short executive description explaining why calls succeeded/failed, RTP degradation, potential NAT/firewall involvement, network congestion, or codec mismatches.\"\n"
-        "}"
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
     )
 
-    user_content = json.dumps(summary_json, indent=2)
+    system_prompt = """
+You are a Senior VoIP Engineer and Root Cause Analysis engine.
+
+Analyze SIP, RTP, WebRTC, SBC, NAT, STUN/TURN, firewall, codec,
+registration and media quality metrics.
+
+IMPORTANT OUTPUT RULES:
+
+- Return ONLY JSON.
+- Do NOT return markdown.
+- Do NOT return tables.
+- Do NOT return explanations outside JSON.
+- Response MUST be valid json.loads().
+- Use empty arrays if no findings exist.
+
+Required schema:
+
+{
+  "overall_health": "Good|Fair|Critical",
+  "call_quality_score": 0,
+  "root_causes": [],
+  "critical_findings": [],
+  "detected_issues": [],
+  "recommendations": [],
+  "executive_summary": ""
+}
+"""
+
+    user_prompt = json.dumps(summary_json, indent=2)
 
     try:
-        client = OpenAI(api_key=api_key, base_url=base_url)
+
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the VoIP traffic summary:\n\n{user_content}"}
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
             ],
-            temperature=0.2,
+            temperature=0,
             max_tokens=2048,
+            response_format={"type": "json_object"},
         )
 
-        content = response.choices[0].message.content.strip() if response.choices else ""
-        logger.info("LLM Raw Response received.")
+        content = (
+            response.choices[0].message.content
+            if response.choices
+            else ""
+        )
+        if not content:
+            raise ValueError("Empty LLM response")
 
-        cleaned_content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.MULTILINE)
-        cleaned_content = re.sub(r"\s*```$", "", cleaned_content, flags=re.MULTILINE)
-        cleaned_content = cleaned_content.strip()
+        logger.info("LLM response received")
 
-        result = json.loads(cleaned_content)
+        result = parse_and_validate_json(content)
         return result
 
     except Exception as e:
-        logger.error(f"LLM analysis failed: {e}. Generating automatic deterministic report fallback.")
-        return generate_local_ai_fallback_analysis(summary_json, str(e))
+
+        logger.warning(
+            f"Primary JSON generation failed: {e}"
+        )
+
+        try:
+            return repair_json_response(
+                client=client,
+                model=model,
+                raw_content=locals().get("content", ""),
+            )
+
+        except Exception as repair_error:
+
+            logger.error(
+                f"Repair failed: {repair_error}"
+            )
+
+            return generate_local_ai_fallback_analysis(
+                summary_json,
+                str(repair_error),
+            )
 
 
-def generate_local_ai_fallback_analysis(summary_json: Dict[str, Any], raw_error: str) -> Dict[str, Any]:
-    """
-    A smart local fallback logic in case the LLM endpoint is offline or credentials are bad.
-    Ensures the user gets useful analysis based on rule engines, matching standard VoIP logic.
-    """
-    call_quality_score = summary_json.get("call_quality_score", 100)
-    detected_issues = summary_json.get("detected_issues", [])
-    
-    overall_health = "Good"
-    if call_quality_score < 50:
-        overall_health = "Critical"
-    elif call_quality_score < 80:
+def parse_and_validate_json(content: str) -> Dict[str, Any]:
+
+    cleaned = clean_response(content)
+
+    data = json.loads(cleaned)
+
+    missing = REQUIRED_FIELDS - set(data.keys())
+
+    if missing:
+        raise ValueError(
+            f"Missing schema fields: {missing}"
+        )
+
+    return data
+
+
+def clean_response(content: str) -> str:
+
+    content = content.strip()
+
+    content = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    )
+
+    content = re.sub(
+        r"\s*```$",
+        "",
+        content,
+    )
+
+    content = content.strip()
+
+    if content.startswith("{"):
+        return content
+
+    match = re.search(
+        r"\{.*\}",
+        content,
+        re.DOTALL,
+    )
+
+    if match:
+        return match.group(0)
+
+    raise ValueError(
+        "No JSON object found in response"
+    )
+
+
+def repair_json_response(
+    client: OpenAI,
+    model: str,
+    raw_content: str,
+) -> Dict[str, Any]:
+
+    repair_prompt = f"""
+Convert the following VoIP report into JSON.
+
+Return ONLY JSON.
+
+Required schema:
+
+{{
+  "overall_health": "Good|Fair|Critical",
+  "call_quality_score": 0,
+  "root_causes": [],
+  "critical_findings": [],
+  "detected_issues": [],
+  "recommendations": [],
+  "executive_summary": ""
+}}
+
+REPORT:
+
+{raw_content}
+"""
+
+    repair_response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": "Return ONLY JSON.",
+            },
+            {
+                "role": "user",
+                "content": repair_prompt,
+            },
+        ],
+        temperature=0,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+    )
+
+    repaired_content = (
+        repair_response.choices[0].message.content
+        if repair_response.choices
+        else ""
+    )
+
+    if not repaired_content:
+        raise ValueError(
+            "Repair model returned empty response"
+        )
+
+    return parse_and_validate_json(
+        repaired_content
+    )
+
+
+def generate_local_ai_fallback_analysis(
+    summary_json: Dict[str, Any],
+    raw_error: str,
+) -> Dict[str, Any]:
+
+    score = summary_json.get(
+        "call_quality_score",
+        100,
+    )
+
+    if score >= 80:
+        overall_health = "Good"
+    elif score >= 50:
         overall_health = "Fair"
+    else:
+        overall_health = "Critical"
 
     root_causes = []
-    critical_findings = []
+    findings = []
     recommendations = []
 
-    nat = summary_json.get("nat_issues", {})
-    if nat.get("possible_nat_traversal_issues"):
-        root_causes.append("NAT traversal traversal collision without STUN/TURN binding updates.")
-        critical_findings.append("Private IP address listed in SIP Contact headers or dynamic RTP negotiation.")
-        recommendations.append("Configure a Session Border Controller (SBC) with Far-End NAT Traversal or enable rport (RFC 3581).")
-        recommendations.append("Ensure STUN/TURN servers are successfully reachable in the WebRTC client configuration.")
+    nat = summary_json.get(
+        "nat_issues",
+        {},
+    )
 
-    sip_stats = summary_json.get("sip_stats", {})
-    if sip_stats.get("authentication_failures", 0) > 0:
-        root_causes.append("SIP Register or INVITE authentication credential mismatch.")
-        critical_findings.append(f"Detected {sip_stats['authentication_failures']} authentication challenges (401 Unauthorized or 407 Proxy Authentication Required).")
-        recommendations.append("Verify SIP client credentials (username, password, and realm) in the phone or PBX settings.")
+    sip_stats = summary_json.get(
+        "sip_stats",
+        {},
+    )
 
-    if sip_stats.get("failed_calls", 0) > 0:
-        root_causes.append("Failed SIP setups resulting in response errors.")
-        critical_findings.append(f"Recorded {sip_stats['failed_calls']} failed calls or SIP registration timeouts.")
-        recommendations.append("Review carrier/SIP proxy router logs. Look specifically for client registration timeouts (408 Request Timeout).")
+    detected_issues = summary_json.get(
+        "detected_issues",
+        [],
+    )
 
-    if "One-way audio" in detected_issues:
-        root_causes.append("One-way media streaming path likely blocked by a strict firewall or symmetric NAT.")
-        critical_findings.append("Symmetric RTP stream missing. Audio is only streaming in a single direction.")
-        recommendations.append("Ensure SIP ALG is disabled on intervening routers and firewalls.")
-        recommendations.append("Verify symmetric RTP (`rtp_symmetric = yes` in Asterisk/FreeSWITCH) is active.")
+    if nat.get(
+        "possible_nat_traversal_issues",
+        False,
+    ):
+        root_causes.append(
+            "NAT traversal mismatch"
+        )
 
-    if "Excessive jitter" in detected_issues or "Excessive packet loss" in detected_issues:
-        root_causes.append("Network congestion, bufferbloat, or wireless link signal degradation.")
-        critical_findings.append(f"Detected media jitter above limit, or high packet loss rate ({summary_json.get('packet_loss_percent')}%).")
-        recommendations.append("Implement Quality of Service (QoS / DiffServ DSCP EF 46) policies on routers to prioritize RTP.")
-        recommendations.append("Adjust jitter buffer size on SIP endpoints (adaptive jitter buffer recommended).")
+        findings.append(
+            "Private/Public IP mismatch detected"
+        )
+
+        recommendations.append(
+            "Configure STUN/TURN or SBC traversal policies"
+        )
+
+    if sip_stats.get(
+        "authentication_failures",
+        0,
+    ) > 0:
+
+        root_causes.append(
+            "SIP authentication failures"
+        )
+
+        findings.append(
+            f"{sip_stats['authentication_failures']} authentication failures detected"
+        )
+
+        recommendations.append(
+            "Verify SIP credentials and realm settings"
+        )
+
+    if sip_stats.get(
+        "failed_calls",
+        0,
+    ) > 0:
+
+        root_causes.append(
+            "Failed SIP call establishment"
+        )
+
+        findings.append(
+            f"{sip_stats['failed_calls']} failed calls observed"
+        )
+
+        recommendations.append(
+            "Review SIP proxy and carrier logs"
+        )
+
+    if (
+        "Excessive jitter" in detected_issues
+        or "Excessive packet loss" in detected_issues
+    ):
+        root_causes.append(
+            "Network instability"
+        )
+
+        findings.append(
+            "Jitter and packet loss affecting RTP quality"
+        )
+
+        recommendations.append(
+            "Enable QoS and adaptive jitter buffers"
+        )
 
     if not root_causes:
-        root_causes.append("No critical system anomalies detected in SIP or RTP traces.")
-        recommendations.append("Network operating within normal VoIP limits. Monitor for periodic traffic spikes.")
-
-    exec_summary = (
-        f"VoIP stream analysis processed {summary_json.get('call_count')} call records. "
-        f"Determined an overall voice health of '{overall_health}' with a Call Quality Score of {call_quality_score}/100. "
-    )
-    if "One-way audio" in detected_issues:
-        exec_summary += "Issues indicate a severe media transmission issue (one-way audio), suggesting a firewall or routing problem. "
-    elif call_quality_score < 80:
-        exec_summary += "Call quality is degraded primarily by network jitter, packet transmission drops, or codec negotiations. "
-    else:
-        exec_summary += "All examined SIP traces, registrations, and RTP streams indicate clean setups and stable connections. "
-        
-    exec_summary += f"[Diagnostic Note: LLM client responded with an error, fallbacks auto-applied: {raw_error[:100]}]"
+        root_causes.append(
+            "No significant issues detected"
+        )
 
     return {
         "overall_health": overall_health,
-        "call_quality_score": call_quality_score,
+        "call_quality_score": score,
         "root_causes": root_causes,
-        "critical_findings": critical_findings,
+        "critical_findings": findings,
         "detected_issues": detected_issues,
         "recommendations": recommendations,
-        "executive_summary": exec_summary
+        "executive_summary": (
+            f"Analysis completed using fallback engine. "
+            f"Call quality score is {score}/100. "
+            f"LLM unavailable or returned invalid output. "
+            f"Reason: {raw_error[:200]}"
+        ),
     }

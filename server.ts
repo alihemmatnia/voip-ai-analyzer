@@ -1,46 +1,11 @@
 import express from "express";
 import path from "path";
 import http from "http";
-import { spawn } from "child_process";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
-  
-  console.log("[VoIP Server] Auto-provisioning python dependencies (pip install)...");
-  
-  try {
-    const pipInstall = spawn("python3", ["-m", "pip", "install", "-r", "requirements.txt", "--user"]);
-    await new Promise<void>((resolve) => {
-      pipInstall.stdout.on("data", (data) => console.log(`[pip] ${data.toString().trim()}`));
-      pipInstall.stderr.on("data", (data) => console.warn(`[pip stderr] ${data.toString().trim()}`));
-      pipInstall.on("close", (code) => {
-        console.log(`[pip] installation completed with exit code ${code}`);
-        resolve();
-      });
-    });
-  } catch (err) {
-    console.error("[VoIP Server] Failed to execute pip install on boot. Attempting direct boot anyway:", err);
-  }
-
-  console.log("[VoIP Server] Spawning Python FastAPI backend (uvicorn app.main:app)...");
-  
-  const fastapiProcess = spawn("python3", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"], {
-    env: { ...process.env, PYTHONUNBUFFERED: "1" }
-  });
-
-  fastapiProcess.stdout.on("data", (data) => {
-    console.log(`[FastAPI Stdout] ${data.toString().trim()}`);
-  });
-
-  fastapiProcess.stderr.on("data", (data) => {
-    console.warn(`[FastAPI Stderr] ${data.toString().trim()}`);
-  });
-
-  fastapiProcess.on("close", (code) => {
-    console.error(`[FastAPI] Python background process exited with code ${code}`);
-  });
 
   const handleProxy = (req: express.Request, res: express.Response) => {
     const options = {

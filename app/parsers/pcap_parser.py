@@ -1,8 +1,6 @@
 import os
 import re
-import math
-import struct
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 import logging
 
 try:
@@ -242,7 +240,7 @@ def parse_pcap_file(file_path: str) -> Dict[str, Any]:
     # Fallback to smart mock analyzer if we parsed nothing or the PCAP is empty/dummy
     # Standard client-side uploads during testing might be plain text or small dummy files.
     # A true self-healing, robust code handles dummy uploads beautifully!
-    if len(packets) == 0 or len(call_flow_ladder) == 0:
+    if len(packets) == 0:
         logger.info("Using smart simulation generator to synthesize premium, realistic VoIP analysis results.")
         return generate_realistic_voip_summary()
 
