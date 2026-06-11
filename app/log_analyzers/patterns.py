@@ -5,18 +5,18 @@ SIP_ERROR_CODES = ["401", "403", "404", "408", "480", "486", "487", "500", "503"
 
 PLATFORM_PATTERNS = {
     "Asterisk": [
-        re.compile(r"\[\w+\]\s*\[.*\]", re.IGNORECASE),
-        re.compile(r"chan_(pjsip|sip)", re.IGNORECASE),
+        re.compile(r"\b(WARNING|ERROR|NOTICE|VERBOSE|DEBUG)\[\d+\]", re.IGNORECASE),
+        re.compile(r"chan_(pjsip|sip)|res_pjsip", re.IGNORECASE),
         re.compile(r"asterisk", re.IGNORECASE),
     ],
     "FreeSWITCH": [
         re.compile(r"freeswitch", re.IGNORECASE),
-        re.compile(r"\bERR\b", re.IGNORECASE),
-        re.compile(r"\bCRIT\b", re.IGNORECASE),
+        re.compile(r"\[(ERR|CRIT|WARNING|DEBUG|INFO)\]\s+\S+\.c:\d+", re.IGNORECASE),
+        re.compile(r"\bsofia(?:_glue|_presence)?\.c\b|\bswitch_core_\S+", re.IGNORECASE),
     ],
     "Kamailio": [
         re.compile(r"kamailio", re.IGNORECASE),
-        re.compile(r"\bKSR\b", re.IGNORECASE),
+        re.compile(r"\bKSR\b|\bksr_\S+", re.IGNORECASE),
         re.compile(r"server\s+id", re.IGNORECASE),
     ],
     "OpenSIPS": [

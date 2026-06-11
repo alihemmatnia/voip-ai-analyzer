@@ -19,13 +19,14 @@ REQUIRED_FIELDS = {
 }
 
 LOG_REQUIRED_FIELDS = {
-    "overall_health",
-    "severity",
-    "root_causes",
-    "critical_findings",
-    "service_impact",
-    "recommendations",
     "executive_summary",
+    "overall_health",
+    "root_causes",
+    "incident_timeline",
+    "affected_services",
+    "health_scores",
+    "critical_findings",
+    "recommendations",
 }
 
 
@@ -144,41 +145,69 @@ def analyze_voip_log_summary_with_ai(
     )
 
     system_prompt = """
-You are a senior VoIP engineer specializing in:
-- Asterisk
-- FreeSWITCH
-- Kamailio
-- OpenSIPS
-- SIP Trunks
-- SBC Platforms
-- Contact Centers
+You are a Senior VoIP Troubleshooting Engineer.
+Analyze the provided VoIP log summary and extract deep root causes, event correlations, service impacts, and timeline sequences.
 
-Analyze the provided VoIP log summary.
+IMPORTANT INSTRUCTION FOR CORRELATION:
+Instead of reporting independent failures separately, correlate them.
+For example, if you see an Authentication Failure followed by a Registration Failure, a SIP Trunk going Offline, and then Call Failures, correlate them into a single incident chain.
 
-Determine:
-- Root causes
-- Critical issues
-- Service impact
-- Recommended actions
+IMPORTANT RESPONSE RULES:
+- Return ONLY JSON.
+- Do NOT return markdown or tables.
+- Return valid JSON that can be decoded with json.loads().
+- Action plans must be highly detailed and split into immediate and long-term actions.
 
-Return ONLY valid JSON.
-
-Schema:
+Target JSON Schema:
 {
-"overall_health": "Good|Warning|Critical",
-"severity": "Low|Medium|High|Critical",
-"root_causes": [],
-"critical_findings": [],
-"service_impact": "",
-"recommendations": [],
-"executive_summary": ""
+  "executive_summary": "High-level summary of the incident and general system state.",
+  "overall_health": "Good|Warning|Critical",
+  "root_causes": [
+    {
+      "issue": "SIP trunk authentication failure",
+      "confidence": 92,
+      "severity": "INFO|LOW|MEDIUM|HIGH|CRITICAL"
+    }
+  ],
+  "incident_timeline": [
+    "12:01:03 Registration Failed",
+    "12:01:05 Authentication Error",
+    "12:01:12 SIP Trunk Disconnected",
+    "12:01:14 Call Failure",
+    "12:01:15 Queue Service Impacted"
+  ],
+  "affected_services": [
+    "Inbound Calls",
+    "Call Recording",
+    "Agent Registration",
+    "Queue Processing",
+    "IVR",
+    "Outbound Calls"
+  ],
+  "health_scores": {
+    "sip": 90,
+    "media": 85,
+    "carrier": 50,
+    "database": 100
+  },
+  "critical_findings": [
+    "Authentication failure for trunk provider",
+    "RTP timeouts detected"
+  ],
+  "recommendations": {
+    "immediate_actions": [
+      "1. Verify SIP trunk credentials",
+      "2. Check provider registration status",
+      "3. Test OPTIONS ping",
+      "4. Verify firewall rules"
+    ],
+    "long_term_actions": [
+      "1. Enable trunk monitoring",
+      "2. Configure failover carrier",
+      "3. Add alerting rules"
+    ]
+  }
 }
-
-Rules:
-- Return JSON only
-- No markdown
-- No explanations outside JSON
-- Recommendations must be actionable
 """
 
     user_prompt = json.dumps(summary_json, indent=2)
@@ -304,13 +333,28 @@ def repair_json_response(
     if required_fields == LOG_REQUIRED_FIELDS:
         schema_text = """
 {
+  "executive_summary": "",
   "overall_health": "Good|Warning|Critical",
-  "severity": "Low|Medium|High|Critical",
-  "root_causes": [],
+  "root_causes": [
+    {
+      "issue": "",
+      "confidence": 0,
+      "severity": "INFO|LOW|MEDIUM|HIGH|CRITICAL"
+    }
+  ],
+  "incident_timeline": [],
+  "affected_services": [],
+  "health_scores": {
+    "sip": 100,
+    "media": 100,
+    "carrier": 100,
+    "database": 100
+  },
   "critical_findings": [],
-  "service_impact": "",
-  "recommendations": [],
-  "executive_summary": ""
+  "recommendations": {
+    "immediate_actions": [],
+    "long_term_actions": []
+  }
 }
 """
     else:
@@ -381,71 +425,152 @@ def generate_local_log_ai_fallback_analysis(
 
     error_count = summary_json.get("error_count", 0)
     warning_count = summary_json.get("warning_count", 0)
-    severity = "Low"
-    overall_health = "Good"
+    
+    sip_health = max(100 - error_count * 5, 0)
+    media_health = 100
+    carrier_health = 100
+    db_health = 100
 
+    overall_health = "Good"
     if error_count > 30 or summary_json.get("network_errors", 0) > 5:
-        severity = "Critical"
         overall_health = "Critical"
-    elif error_count > 10 or warning_count > 50:
-        severity = "High"
-        overall_health = "Warning"
-    elif error_count > 5:
-        severity = "Medium"
+    elif error_count > 5 or warning_count > 20:
         overall_health = "Warning"
 
     root_causes = []
     critical_findings = []
-    recommendations = []
+    immediate_actions = []
+    long_term_actions = []
+    affected_services = []
+    incident_timeline = []
+
+    matched_lines = summary_json.get("matched_lines", [])
+    critical_lines = [l for l in matched_lines if l.get("severity") in ("error", "warning")]
+    if not critical_lines:
+        critical_lines = matched_lines
+        
+    for line in critical_lines[:15]:
+        ts = line.get("timestamp") or ""
+        msg = line.get("message", "")
+        if ts and msg.startswith(ts):
+            msg_clean = msg
+        else:
+            msg_clean = f"{ts} {msg}" if ts else msg
+        if len(msg_clean) > 75:
+            msg_clean = msg_clean[:72] + "..."
+        incident_timeline.append(msg_clean)
 
     if summary_json.get("authentication_failures", 0) > 0:
-        root_causes.append("Authentication failures impacting SIP registration and calls")
+        sip_health = max(sip_health - 30, 0)
+        root_causes.append({
+            "issue": "SIP authentication failures causing registration outages",
+            "confidence": 95,
+            "severity": "CRITICAL"
+        })
         critical_findings.append(
             f"{summary_json['authentication_failures']} authentication failure events detected"
         )
-        recommendations.append("Validate SIP credentials and review authentication policies.")
+        affected_services.append("Agent Registration")
+        affected_services.append("Outbound Calls")
+        immediate_actions.extend([
+            "Verify SIP trunk credentials and domain settings",
+            "Verify PJSIP/Sofia gateway authentication configs"
+        ])
+        long_term_actions.append("Implement automated credential rotation and monitoring alerts")
 
     if summary_json.get("registration_failures", 0) > 0:
-        root_causes.append("Registration failures leading to endpoint outages")
+        sip_health = max(sip_health - 20, 0)
+        if not any(rc["issue"].startswith("SIP authentication") for rc in root_causes):
+            root_causes.append({
+                "issue": "Repeated registration timeouts / failures",
+                "confidence": 80,
+                "severity": "HIGH"
+            })
         critical_findings.append(
             f"{summary_json['registration_failures']} registration failure events observed"
         )
-        recommendations.append("Investigate registration timeouts and credential expiration handling.")
+        if "Agent Registration" not in affected_services:
+            affected_services.append("Agent Registration")
+        immediate_actions.append("Check network reachability to the registrar proxy")
+        long_term_actions.append("Tune registration timeouts and keep-alive intervals")
 
-    if summary_json.get("rtp_errors", 0) > 0:
-        root_causes.append("RTP media instability affecting call quality")
+    if summary_json.get("rtp_errors", 0) > 0 or summary_json.get("codec_errors", 0) > 0:
+        media_health = max(100 - summary_json.get("rtp_errors", 0) * 15 - summary_json.get("codec_errors", 0) * 10, 0)
+        root_causes.append({
+            "issue": "RTP media instability or codec mismatch",
+            "confidence": 85,
+            "severity": "HIGH" if media_health < 50 else "MEDIUM"
+        })
         critical_findings.append(
-            f"{summary_json['rtp_errors']} RTP-related warnings or errors found"
+            f"RTP timeout or codec negotiation warnings found"
         )
-        recommendations.append("Check media path, codec negotiation, and SBC media policies.")
+        affected_services.append("Call Quality")
+        affected_services.append("Inbound Calls")
+        immediate_actions.extend([
+            "Check local and remote codec compatibility list (ensure G.711 / OPUS matches)",
+            "Check media port mappings on firewalls/SBCs"
+        ])
+        long_term_actions.append("Configure dynamic codec payloads and verify STUN/TURN traversal configurations")
 
-    if summary_json.get("network_errors", 0) > 0:
-        root_causes.append("Network infrastructure issues impacting SIP signaling")
-        recommendations.append("Verify DNS resolution, transport connectivity, and network health.")
+    if summary_json.get("network_errors", 0) > 0 or summary_json.get("trunk_errors", 0) > 0 or summary_json.get("gateway_errors", 0) > 0:
+        carrier_health = max(100 - summary_json.get("trunk_errors", 0) * 40 - summary_json.get("gateway_errors", 0) * 20, 0)
+        root_causes.append({
+            "issue": "Trunk or gateway failure (network infrastructure error)",
+            "confidence": 90,
+            "severity": "CRITICAL" if carrier_health < 40 else "HIGH"
+        })
+        critical_findings.append(
+            "SIP gateway or carrier trunk connectivity timeout"
+        )
+        affected_services.extend(["Inbound Calls", "Outbound Calls"])
+        immediate_actions.extend([
+            "Verify routing configuration and DNS settings for SIP trunk",
+            "Send OPTIONS ping requests to SIP gateway to test reachability"
+        ])
+        long_term_actions.append("Configure a secondary backup carrier trunk for failover routing")
 
     if not root_causes:
-        root_causes.append("No obvious root cause identified from log summary")
+        root_causes.append({
+            "issue": "Unknown minor anomalies",
+            "confidence": 50,
+            "severity": "LOW"
+        })
 
     if not critical_findings:
-        critical_findings.append("No critical conditions were automatically detected.")
+        critical_findings.append("No critical indicators detected.")
 
-    if not recommendations:
-        recommendations.append("Continue monitoring log sources and verify service availability.")
+    if not immediate_actions:
+        immediate_actions.append("Check device logs and run ping diagnostics.")
+
+    if not long_term_actions:
+        long_term_actions.append("Add alert dashboards for registration and call setups.")
+
+    if not affected_services:
+        affected_services.append("None")
+
+    if not incident_timeline:
+        incident_timeline.append("No incidents recorded in timeline.")
 
     return {
-        "overall_health": overall_health,
-        "severity": severity,
-        "root_causes": root_causes,
-        "critical_findings": critical_findings,
-        "service_impact": (
-            "Potential service impact detected from log errors and warnings."
-            if error_count > 0 else "Minimal service impact detected."
-        ),
-        "recommendations": recommendations,
         "executive_summary": (
-            f"Fallback log analysis generated because LLM repair failed or returned invalid JSON. "
-            f"Detected {error_count} errors and {warning_count} warnings."
+            f"Fallback log analysis generated (LLM did not respond). "
+            f"Detected {error_count} errors and {warning_count} warnings on {summary_json.get('platform', 'Unknown')} platform."
         ),
+        "overall_health": overall_health,
+        "root_causes": root_causes,
+        "incident_timeline": incident_timeline,
+        "affected_services": affected_services,
+        "health_scores": {
+            "sip": sip_health,
+            "media": media_health,
+            "carrier": carrier_health,
+            "database": db_health
+        },
+        "critical_findings": critical_findings,
+        "recommendations": {
+            "immediate_actions": immediate_actions,
+            "long_term_actions": long_term_actions
+        }
     }
 
 

@@ -513,7 +513,10 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-4">
-                          <LogAnalysisReport analysis={activeResult.ai_analysis as any} />
+                          <LogAnalysisReport 
+                            analysis={activeResult.ai_analysis as any} 
+                            logSummary={activeResult.log_summary} 
+                          />
                         </div>
                       </div>
                     ) : (

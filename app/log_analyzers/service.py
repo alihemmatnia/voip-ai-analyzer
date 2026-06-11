@@ -24,7 +24,13 @@ def process_voip_log_background(job_id: str, file_path: str):
         db.commit()
 
         log_summary = parse_log_file(file_path)
-        ai_analysis = analyze_voip_log_summary_with_ai(log_summary)
+        
+        # Optimize size for LLM prompt context while saving full parsed lines in DB
+        ai_input_summary = log_summary.copy()
+        if "matched_lines" in ai_input_summary:
+            ai_input_summary["matched_lines"] = ai_input_summary["matched_lines"][:150]
+            
+        ai_analysis = analyze_voip_log_summary_with_ai(ai_input_summary)
 
         combined_result = {
             "log_summary": log_summary,

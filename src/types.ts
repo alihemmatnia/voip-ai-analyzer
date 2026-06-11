@@ -68,14 +68,37 @@ export interface AiAnalysis {
   executive_summary: string;
 }
 
+export interface LogRootCause {
+  issue: string;
+  confidence: number;
+  severity: "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
 export interface LogAiAnalysis {
-  overall_health: string; // "Good" | "Warning" | "Critical"
-  severity: string; // "Low" | "Medium" | "High" | "Critical"
-  root_causes: string[];
-  critical_findings: string[];
-  service_impact: string;
-  recommendations: string[];
   executive_summary: string;
+  overall_health: "Good" | "Warning" | "Critical";
+  root_causes: LogRootCause[];
+  incident_timeline: string[];
+  affected_services: string[];
+  health_scores: {
+    sip: number;
+    media: number;
+    carrier: number;
+    database: number;
+  };
+  critical_findings: string[];
+  recommendations: {
+    immediate_actions: string[];
+    long_term_actions: string[];
+  };
+}
+
+export interface LogEntry {
+  line_number: number;
+  timestamp: string | null;
+  severity: "error" | "warning" | "info";
+  categories: string[];
+  message: string;
 }
 
 export interface LogSummary {
@@ -95,6 +118,8 @@ export interface LogSummary {
   top_errors: string[];
   line_count: number;
   detected_issues: string[];
+  matched_lines?: LogEntry[];
+  call_flow_ladder?: CallFlowEvent[];
 }
 
 export interface UnifiedAnalysisResult {
