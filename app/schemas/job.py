@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any, List
 class JobResponse(BaseModel):
     job_id: str
     status: str
+    job_type: Optional[str] = None
     filename: Optional[str] = None
     error_message: Optional[str] = None
     created_at: Optional[datetime.datetime] = None

@@ -247,14 +247,12 @@ def parse_pcap_file(file_path: str) -> Dict[str, Any]:
     # Calculate Jitter, Packet Loss, Diagnostics per stream
     analyzed_streams = []
     total_packets = 0
-    packet_loss_percentage = 0.0
     jitter_values = []
     codecs_detected = set()
     detected_issues = []
 
     # NAT/Mismatch diagnostics
     nat_issues_detected = False
-    sip_contact_mismatch = False
     rtp_source_mismatch = False
     private_public_mismatch = False
 

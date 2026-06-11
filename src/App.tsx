@@ -7,21 +7,18 @@ import {
   CheckCircle2, 
   XCircle, 
   RotateCw, 
-  BookOpen, 
   Network, 
   ArrowRightLeft, 
   Volume2, 
-  Terminal, 
-  ExternalLink,
   Sliders,
   ShieldCheck,
-  RefreshCw,
-  FileCode
+  RefreshCw
 } from "lucide-react";
 
 import { Job, UnifiedAnalysisResult } from "./types";
 import CallFlowLadder from "./components/CallFlowLadder";
 import AiAnalysisReport from "./components/AiAnalysisReport";
+import LogAnalysisReport from "./components/LogAnalysisReport";
 
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -76,7 +73,7 @@ export default function App() {
 
             if (updatedJob.status === "completed") {
               if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-              fetchResult(updatedJob.job_id);
+              fetchResult(updatedJob.job_id, updatedJob.job_type);
             } else if (updatedJob.status === "failed") {
               if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             }
@@ -93,10 +90,11 @@ export default function App() {
     }
   }, [activeJob]);
 
-  const fetchResult = async (jobId: string) => {
+  const fetchResult = async (jobId: string, jobType: Job["job_type"]) => {
     setIsLoadingResult(true);
     try {
-      const response = await fetch(`/api/v1/results/${jobId}`);
+      const endpoint = jobType === "log" ? `/api/v1/logs/results/${jobId}` : `/api/v1/results/${jobId}`;
+      const response = await fetch(endpoint);
       if (response.ok) {
         const data = await response.json();
         if (data.result) {
@@ -116,7 +114,7 @@ export default function App() {
     setActiveJob(job);
     setActiveResult(null);
     if (job.status === "completed") {
-      fetchResult(job.job_id);
+      fetchResult(job.job_id, job.job_type);
     }
   };
 
@@ -127,8 +125,11 @@ export default function App() {
     const formData = new FormData();
     formData.append("file", file);
 
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    const endpoint = [".log", ".txt"].includes(ext) ? "/api/v1/logs/upload" : "/api/v1/upload";
+
     try {
-      const response = await fetch("/api/v1/upload", {
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -267,11 +268,11 @@ export default function App() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pcap,.pcapng,.cap"
+                accept=".pcap,.pcapng,.cap,.log,.txt"
                 className="hidden"
                 onChange={handleFileChange}
               />
-              
+
               {isUploading ? (
                 <div className="space-y-2">
                   <RotateCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
@@ -283,10 +284,10 @@ export default function App() {
                   <UploadCloud className={`w-8 h-8 mx-auto transition-colors ${isDragging ? 'text-emerald-400' : 'text-neutral-500'}`} />
                   <div>
                     <p className="text-xs font-semibold text-slate-900">
-                      Drag & Drop PCAP file
+                      Drag & Drop PCAP or VoIP log file
                     </p>
                     <p className="text-[10px] text-slate-500 mt-1">
-                      Supports .pcap, .pcapng, and .cap
+                      Supports .pcap, .pcapng, .cap, .log, and .txt
                     </p>
                   </div>
                   <button className="px-3 py-1.5 bg-white text-slate-900 hover:text-slate-900 border border-slate-300 hover:border-slate-400 rounded-lg text-[11px] font-medium transition-all mx-auto shadow-sm">
@@ -339,7 +340,10 @@ export default function App() {
                         <div className="truncate text-xs font-semibold text-slate-900" title={job.filename}>
                           {job.filename}
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500">
+                            {job.job_type.toUpperCase()}
+                          </span>
                           {renderStatusBadge(job.status)}
                         </div>
                       </div>
@@ -460,7 +464,60 @@ export default function App() {
                         <p className="text-xs text-slate-500 font-mono">Retrieving results cached in SQLite DB...</p>
                     </div>
                   ) : activeResult ? (
-                    <div className="space-y-6 flex-grow">
+                    activeJob?.job_type === "log" ? (
+                      <div className="space-y-6 flex-grow">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">Platform</p>
+                            <p className="text-sm font-semibold text-slate-900">{activeResult.log_summary?.platform || "Unknown"}</p>
+                          </div>
+                          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">Errors</p>
+                            <p className="text-sm font-semibold text-slate-900">{activeResult.log_summary?.error_count ?? 0}</p>
+                          </div>
+                          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">Warnings</p>
+                            <p className="text-sm font-semibold text-slate-900">{activeResult.log_summary?.warning_count ?? 0}</p>
+                          </div>
+                          <div className="bg-white p-4 border border-slate-200 rounded-xl shadow-sm">
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">Detected Issues</p>
+                            <p className="text-sm font-semibold text-slate-900">{activeResult.log_summary?.detected_issues?.length ?? 0}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div className="bg-slate-100 p-5 border border-slate-200 rounded-xl">
+                            <h3 className="text-sm font-semibold text-slate-900 mb-3">Top Log Events</h3>
+                            <ul className="space-y-2 text-xs text-slate-700">
+                              {activeResult.log_summary?.top_errors?.length ? (
+                                activeResult.log_summary.top_errors.map((item, idx) => (
+                                  <li key={idx} className="rounded-lg px-3 py-2 bg-white border border-slate-200">{item}</li>
+                                ))
+                              ) : (
+                                <li className="rounded-lg px-3 py-2 bg-white border border-slate-200">No top events identified.</li>
+                              )}
+                            </ul>
+                          </div>
+
+                          <div className="bg-slate-100 p-5 border border-slate-200 rounded-xl">
+                            <h3 className="text-sm font-semibold text-slate-900 mb-3">SIP Code Summary</h3>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
+                              {activeResult.log_summary?.sip_errors && Object.entries(activeResult.log_summary.sip_errors).map(([code, count]) => (
+                                <div key={code} className="rounded-lg px-3 py-2 bg-white border border-slate-200 flex items-center justify-between">
+                                  <span>{code}</span>
+                                  <strong>{count}</strong>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          <LogAnalysisReport analysis={activeResult.ai_analysis as any} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6 flex-grow">
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         
@@ -471,20 +528,20 @@ export default function App() {
                           </div>
                           <div className="flex items-baseline gap-1 mt-2">
                             <span className="text-2xl font-bold font-mono text-neutral-100">
-                              {activeResult.pcap_summary.call_quality_score}
+                              {activeResult.pcap_summary!.call_quality_score}
                             </span>
                             <span className="text-neutral-550 text-xs text-mono">/100</span>
                           </div>
                           <div className="w-full bg-neutral-950 h-1 rounded overflow-hidden mt-3">
                             <div 
                               className={`h-full ${
-                                activeResult.pcap_summary.call_quality_score >= 80 
+                                activeResult.pcap_summary!.call_quality_score >= 80 
                                   ? 'bg-emerald-500' 
-                                  : activeResult.pcap_summary.call_quality_score >= 50 
+                                  : activeResult.pcap_summary!.call_quality_score >= 50 
                                     ? 'bg-amber-500' 
                                     : 'bg-rose-500'
                               }`}
-                              style={{ width: `${activeResult.pcap_summary.call_quality_score}%` }}
+                              style={{ width: `${activeResult.pcap_summary!.call_quality_score}%` }}
                             ></div>
                           </div>
                         </div>
@@ -496,14 +553,14 @@ export default function App() {
                           </div>
                           <div className="flex items-baseline gap-1 mt-2">
                             <span className="text-2xl font-bold font-mono text-neutral-100">
-                              {activeResult.pcap_summary.media_stability_score}
+                              {activeResult.pcap_summary!.media_stability_score}
                             </span>
                             <span className="text-neutral-550 text-xs text-mono">/100</span>
                           </div>
                           <div className="w-full bg-neutral-950 h-1 rounded overflow-hidden mt-3">
                             <div 
                               className="h-full bg-sky-500"
-                              style={{ width: `${activeResult.pcap_summary.media_stability_score}%` }}
+                              style={{ width: `${activeResult.pcap_summary!.media_stability_score}%` }}
                             ></div>
                           </div>
                         </div>
@@ -514,8 +571,8 @@ export default function App() {
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                           </div>
                           <div className="flex items-baseline gap-1 mt-2">
-                            <span className={`text-2xl font-bold font-mono ${activeResult.pcap_summary.packet_loss_percent > 5.0 ? 'text-rose-400 animate-pulse' : 'text-neutral-100'}`}>
-                              {activeResult.pcap_summary.packet_loss_percent}%
+                            <span className={`text-2xl font-bold font-mono ${activeResult.pcap_summary!.packet_loss_percent > 5.0 ? 'text-rose-400 animate-pulse' : 'text-neutral-100'}`}>
+                              {activeResult.pcap_summary!.packet_loss_percent}%
                             </span>
                           </div>
                           <p className="text-[9px] font-mono text-neutral-550 mt-3 uppercase tracking-wider">
@@ -529,8 +586,8 @@ export default function App() {
                             <Volume2 className="w-3.5 h-3.5 text-orange-400" />
                           </div>
                           <div className="flex items-baseline gap-1 mt-2">
-                            <span className={`text-2xl font-bold font-mono ${activeResult.pcap_summary.avg_jitter_ms > 30 ? 'text-rose-400 animate-pulse' : 'text-neutral-100'}`}>
-                              {activeResult.pcap_summary.avg_jitter_ms}
+                            <span className={`text-2xl font-bold font-mono ${activeResult.pcap_summary!.avg_jitter_ms > 30 ? 'text-rose-400 animate-pulse' : 'text-neutral-100'}`}>
+                              {activeResult.pcap_summary!.avg_jitter_ms}
                             </span>
                             <span className="text-neutral-550 text-xs text-mono">ms</span>
                           </div>
@@ -549,7 +606,7 @@ export default function App() {
                               Negotiated Codecs
                             </span>
                             <div className="flex gap-1.5 flex-wrap">
-                              {activeResult.pcap_summary.codecs.map((codec, id) => (
+                              {activeResult.pcap_summary!.codecs.map((codec, id) => (
                                 <span key={id} className="text-xs font-mono font-bold bg-neutral-950 px-2 py-0.5 border border-neutral-800 rounded">
                                   {codec}
                                 </span>
@@ -565,7 +622,7 @@ export default function App() {
                               NAT Traversal Check
                             </span>
                             <div className="flex items-center justify-between text-xs font-mono">
-                              {activeResult.pcap_summary.nat_issues.possible_nat_traversal_issues ? (
+                              {activeResult.pcap_summary!.nat_issues.possible_nat_traversal_issues ? (
                                 <span className="text-amber-400 font-semibold flex items-center gap-1">
                                   <AlertTriangle className="w-3.5 h-3.5" />
                                   Potential NAT traversal problem
@@ -620,11 +677,11 @@ export default function App() {
                       <div className="space-y-4">
                         
                         {activeTab === "ai" && (
-                          <AiAnalysisReport analysis={activeResult.ai_analysis} />
+                          <AiAnalysisReport analysis={activeResult.ai_analysis as any} />
                         )}
 
                         {activeTab === "ladder" && (
-                          <CallFlowLadder events={activeResult.pcap_summary.call_flow_ladder} />
+                          <CallFlowLadder events={activeResult.pcap_summary!.call_flow_ladder} />
                         )}
 
                         {activeTab === "streams" && (
@@ -649,7 +706,7 @@ export default function App() {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-neutral-900 text-neutral-300">
-                                    {activeResult.pcap_summary.rtp_streams.map((stream, idx) => (
+                                    {activeResult.pcap_summary!.rtp_streams.map((stream, idx) => (
                                       <tr key={idx} className="hover:bg-neutral-900/40">
                                         <td className="p-3 font-semibold text-emerald-400">{stream.ssrc}</td>
                                         <td className="p-3">{stream.source_ip}:{stream.source_port}</td>
@@ -679,7 +736,7 @@ export default function App() {
                                   SIP Command Methods
                                 </h4>
                                 <div className="space-y-1.5 font-mono text-xs">
-                                  {Object.entries(activeResult.pcap_summary.sip_stats.methods).map(([method, count], id) => (
+                                  {Object.entries(activeResult.pcap_summary!.sip_stats.methods).map(([method, count], id) => (
                                     <div key={id} className="flex justify-between items-center py-1 border-b border-neutral-900/60">
                                       <span className="text-neutral-400">{method}</span>
                                       <span className="font-semibold text-neutral-250 bg-neutral-900 px-2 py-0.5 rounded text-[11px]">
@@ -695,7 +752,7 @@ export default function App() {
                                   SIP Status Responses Summary
                                 </h4>
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 font-mono text-xs">
-                                  {Object.entries(activeResult.pcap_summary.sip_stats.responses).map(([code, count], id) => {
+                                  {Object.entries(activeResult.pcap_summary!.sip_stats.responses).map(([code, count], id) => {
                                     const isError = code.startsWith("4") || code.startsWith("5");
                                     const hasCount = (count as number) > 0;
                                     return (
@@ -728,40 +785,40 @@ export default function App() {
                             <div className="bg-neutral-900/40 p-5 rounded-xl border border-neutral-850 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center font-mono text-xs">
                               <div className="space-y-1">
                                 <span className="text-[10px] text-neutral-550 uppercase tracking-widest block">STUN packets</span>
-                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary.stun_packets_count}</span>
+                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary!.stun_packets_count}</span>
                               </div>
                               <div className="space-y-1">
                                 <span className="text-[10px] text-neutral-550 uppercase tracking-widest block">TURN allocations</span>
-                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary.turn_packets_count}</span>
+                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary!.turn_packets_count}</span>
                               </div>
                               <div className="space-y-1">
                                 <span className="text-[10px] text-neutral-550 uppercase tracking-widest block">WebRTC channels</span>
-                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary.webrtc_packets_count}</span>
+                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary!.webrtc_packets_count}</span>
                               </div>
                               <div className="space-y-1">
                                 <span className="text-[10px] text-neutral-550 uppercase tracking-widest block">WebSocket SIP text</span>
-                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary.websocket_sip_count}</span>
+                                <span className="text-base font-bold text-neutral-250">{activeResult.pcap_summary!.websocket_sip_count}</span>
                               </div>
                             </div>
                           </div>
                         )}
-
                       </div>
 
                     </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center p-12 hover:bg-neutral-900/10 border border-dashed border-neutral-800 rounded-xl max-w-sm mx-auto text-center space-y-2">
-                       <Clock className="w-8 h-8 text-neutral-600 animate-pulse" />
-                       <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">No results fetched</h3>
-                       <p className="text-[10px] text-neutral-500">Wait for background threads or reload details.</p>
-                       <button 
-                         onClick={() => fetchResult(activeJob.job_id)}
-                         className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 rounded text-[11px] font-mono text-emerald-400"
-                       >
-                         Reload results
-                       </button>
-                    </div>
-                  )}
+                  )
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 hover:bg-neutral-900/10 border border-dashed border-neutral-800 rounded-xl max-w-sm mx-auto text-center space-y-2">
+                     <Clock className="w-8 h-8 text-neutral-600 animate-pulse" />
+                     <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-wider">No results fetched</h3>
+                     <p className="text-[10px] text-neutral-500">Wait for background threads or reload details.</p>
+                     <button 
+                       onClick={() => fetchResult(activeJob.job_id, activeJob.job_type)}
+                       className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 rounded text-[11px] font-mono text-emerald-400"
+                     >
+                       Reload results
+                     </button>
+                  </div>
+                )}
                 </>
               )}
 

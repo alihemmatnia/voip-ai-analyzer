@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import logging
 
+from sqlalchemy import text
 from core.config import settings
 from db.database import engine, Base
 from api.endpoints import router as api_router
@@ -13,9 +14,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VoIPAnalyzer")
 
+def ensure_sqlite_migrations() -> None:
+    """Apply lightweight SQLite schema fixes for existing databases."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    with engine.begin() as conn:
+        result = conn.execute(text("PRAGMA table_info(jobs)"))
+        existing_columns = [row[1] for row in result.fetchall()]
+        if "job_type" not in existing_columns:
+            logger.info("Migrating existing jobs table to add job_type column.")
+            conn.execute(
+                text("ALTER TABLE jobs ADD COLUMN job_type VARCHAR(50) NOT NULL DEFAULT 'pcap'")
+            )
+            logger.info("job_type column added to jobs table.")
+
 try:
     logger.info("Initializing SQLite database records & creating structured schemas.")
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_migrations()
     logger.info("Database schemas initialized successfully.")
 except Exception as e:
     logger.critical(f"Critical error bootstrappig DB structures: {e}")

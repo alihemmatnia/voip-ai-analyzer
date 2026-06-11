@@ -68,13 +68,46 @@ export interface AiAnalysis {
   executive_summary: string;
 }
 
-export interface UnifiedAnalysisResult {
-  pcap_summary: PcapSummary;
-  ai_analysis: AiAnalysis;
+export interface LogAiAnalysis {
+  overall_health: string; // "Good" | "Warning" | "Critical"
+  severity: string; // "Low" | "Medium" | "High" | "Critical"
+  root_causes: string[];
+  critical_findings: string[];
+  service_impact: string;
+  recommendations: string[];
+  executive_summary: string;
 }
+
+export interface LogSummary {
+  platform: string;
+  error_count: number;
+  warning_count: number;
+  registration_failures: number;
+  authentication_failures: number;
+  network_errors: number;
+  rtp_errors: number;
+  codec_errors: number;
+  gateway_errors: number;
+  trunk_errors: number;
+  call_failures: number;
+  timeouts: number;
+  sip_errors: Record<string, number>;
+  top_errors: string[];
+  line_count: number;
+  detected_issues: string[];
+}
+
+export interface UnifiedAnalysisResult {
+  pcap_summary?: PcapSummary;
+  log_summary?: LogSummary;
+  ai_analysis: AiAnalysis | LogAiAnalysis;
+}
+
+export type JobType = "pcap" | "log";
 
 export interface Job {
   job_id: string;
+  job_type: JobType;
   status: "queued" | "processing" | "completed" | "failed";
   filename: string;
   error_message?: string;

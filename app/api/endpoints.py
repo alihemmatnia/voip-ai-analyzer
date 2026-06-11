@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 
 from db.database import get_db
-from models.job import Job, AnalysisResult
+from models.job import Job, AnalysisResult, LogAnalysisResult
 from schemas.job import JobResponse, AnalysisResultResponse
 from core.config import settings
 from services.analyzer import process_voip_pcap_background
+from log_analyzers.service import process_voip_log_background
 
 router = APIRouter(prefix="/v1")
 
@@ -46,6 +47,7 @@ async def upload_pcap(
     job_record = Job(
         id=job_id,
         filename=filename,
+        job_type="pcap",
         status="queued"
     )
     db.add(job_record)
@@ -57,8 +59,88 @@ async def upload_pcap(
     return JobResponse(
         job_id=job_record.id,
         status=job_record.status,
+        job_type=job_record.job_type,
         filename=job_record.filename,
         created_at=job_record.created_at
+    )
+
+
+@router.post("/logs/upload", response_model=JobResponse)
+async def upload_log(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    filename = os.path.basename(file.filename or "uploaded_log.log")
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in [".log", ".txt"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file extension. Please upload a .log or .txt file."
+        )
+
+    job_id = str(uuid.uuid4())
+    safe_filename = f"{job_id}_{filename}"
+    file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
+
+    try:
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save log file: {str(e)}")
+
+    job_record = Job(
+        id=job_id,
+        filename=filename,
+        job_type="log",
+        status="queued"
+    )
+    db.add(job_record)
+    db.commit()
+    db.refresh(job_record)
+
+    background_tasks.add_task(process_voip_log_background, job_id, file_path)
+
+    return JobResponse(
+        job_id=job_record.id,
+        status=job_record.status,
+        job_type=job_record.job_type,
+        filename=job_record.filename,
+        created_at=job_record.created_at
+    )
+
+
+@router.get("/logs/results/{job_id}", response_model=AnalysisResultResponse)
+def get_log_results(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Log analysis job not found.")
+
+    if job.job_type != "log":
+        raise HTTPException(status_code=400, detail="Requested job is not a log analysis job.")
+
+    if job.status != "completed":
+        return AnalysisResultResponse(
+            job_id=job.id,
+            status=job.status,
+            result=None,
+            error_message=job.error_message
+        )
+
+    result_record = db.query(LogAnalysisResult).filter(LogAnalysisResult.job_id == job_id).first()
+    if not result_record:
+        raise HTTPException(status_code=404, detail="Log analysis result not found.")
+
+    try:
+        parsed_result = json.loads(result_record.summary_json)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupted log analysis record in database.")
+
+    return AnalysisResultResponse(
+        job_id=job.id,
+        status=job.status,
+        result=parsed_result
     )
 
 
@@ -72,6 +154,7 @@ def list_jobs(db: Session = Depends(get_db)):
         JobResponse(
             job_id=j.id,
             status=j.status,
+            job_type=j.job_type,
             filename=j.filename,
             error_message=j.error_message,
             created_at=j.created_at,
@@ -92,6 +175,7 @@ def get_job_status(job_id: str, db: Session = Depends(get_db)):
     return JobResponse(
         job_id=job.id,
         status=job.status,
+        job_type=job.job_type,
         filename=job.filename,
         error_message=job.error_message,
         created_at=job.created_at,
