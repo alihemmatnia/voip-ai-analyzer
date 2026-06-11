@@ -1,19 +1,19 @@
-# VoIP AI Analyzer
+# VoIP AI Analyzer (v1.0.0)
 
-AI-assisted VoIP trace analysis platform built with a Python backend and a React + Vite frontend.
+Production-ready PCAP SIP parser & Large Language Model diagnostic panel built with a Python backend and a React + Vite frontend.
 
-The application allows users to upload PCAP files and VoIP log files, analyze SIP/VoIP traffic, visualize call flows, and generate automated troubleshooting summaries powered by LLM.
+The application allows users to upload PCAP files and VoIP log files, analyze SIP/VoIP traffic, visualize call flows, generate automated troubleshooting summaries, and interact with a dedicated virtual Senior VoIP Engineer.
 
 ## Features
 
-* Upload and analyze PCAP traces (`.pcap`, `.pcapng`, `.cap` files)
-* Upload and analyze VoIP logs (`.log`, `.txt` files)
-* Automatic platform detection (Asterisk, FreeSWITCH, Kamailio, OpenSIPS, SBC)
-* SIP traffic and error analysis
-* RTP stream quality metrics (packet loss, jitter, codec)
-* AI-assisted root cause analysis and recommendations
-* Visualize SIP call flows with ladder diagrams
-* View analysis history and comprehensive reports
+* **PCAP Signal Analytics**: Parse packet captures (`.pcap`, `.pcapng`, `.cap`) to analyze UDP packets, compile Jitter/Packet Loss stats, and map negotiated codecs.
+* **Unified Log Diagnostics**: Upload system logs (`.log`, `.txt`) to automatically auto-detect platforms (Asterisk, FreeSWITCH, Kamailio, OpenSIPS, SBC) and parse severity lines.
+* **Interactive AI Chat Assistant**: Consult a virtual Senior VoIP Engineer (15+ Years Experience) side-by-side with reports, selecting from Beginner, Intermediate, or Expert response modes.
+* **Automated Suggested Questions**: Instantly queries custom troubleshooting recommendations upon analysis completion to guide user investigation.
+* **Incident Timeline Correlation**: Reconstructs the chronological flow of errors, mapping related authentication mismatches, registry drops, gateway failures, and carrier disconnects.
+* **Visual Call Flow Ladders**: Generates high-fidelity ladder diagrams mapping source and destination signaling.
+* **Remediation Playbooks**: Splits recommendations into immediate action plans (with CLI commands like `pjsip show registrations`, `sofia status`, or dispatch dispatchers) and long-term improvements.
+* **Log Terminal Console**: Beautiful dark-themed search terminal showing parsed log lines with real-time severity tag filters and category toggles.
 
 ## Supported Analysis Types
 
@@ -146,7 +146,8 @@ If the backend runs on a different port, update the frontend API configuration a
 │   ├── components/
 │   │   ├── AiAnalysisReport.tsx
 │   │   ├── CallFlowLadder.tsx
-│   │   └── LogAnalysisReport.tsx
+│   │   ├── LogAnalysisReport.tsx
+│   │   └── AnalysisChatPanel.tsx
 │   └── types.ts
 ├── storage/
 │   ├── uploads/
@@ -188,6 +189,13 @@ If the backend runs on a different port, update the frontend API configuration a
 | ------ | ---------------------------------- | -------------------------------- |
 | POST   | `/api/v1/logs/upload`              | Upload log file for analysis     |
 | GET    | `/api/v1/logs/results/{job_id}`    | Get log analysis results         |
+
+### AI Chat Assistant
+
+| Method | Endpoint                                    | Description                                           |
+| ------ | ------------------------------------------- | ----------------------------------------------------- |
+| POST   | `/api/v1/analysis/{analysis_id}/chat`       | Post a message to the AI VoIP Troubleshooting Engineer |
+| GET    | `/api/v1/analysis/{analysis_id}/chat/history` | Retrieve chat session message history and suggestions  |
 
 ## Configuration
 

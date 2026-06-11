@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List
 from openai import OpenAI
 from core.config import settings
 
@@ -695,3 +695,145 @@ def generate_local_ai_fallback_analysis(
             f"Reason: {raw_error[:200]}"
         ),
     }
+
+
+def answer_analysis_chat_message(
+    chat_history: List[Dict[str, str]],  # [{"role": "user"|"assistant", "content": "..."}]
+    analysis_context: Dict[str, Any],
+    mode: str = "expert"  # beginner, intermediate, expert
+) -> str:
+    api_key = settings.OPENAI_API_KEY
+    base_url = settings.OPENAI_BASE_URL
+    model = settings.OPENAI_MODEL
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+    )
+
+    system_prompt = f"""
+You are a Senior VoIP Troubleshooting Engineer with 15+ years of experience.
+You are reviewing a completed VoIP analysis report.
+Your job is to explain findings, justify conclusions, reference evidence, and guide troubleshooting.
+
+Always use the provided analysis context to answer.
+Never invent data or mention information not present in the analysis context.
+If evidence or details are not available in the context:
+Explicitly reply: "I cannot confirm this from the uploaded data."
+
+For every response, you MUST provide:
+1. Direct Answer
+2. Supporting Evidence (citing specific metrics, timeline entries, logs, or results from the context)
+3. Recommended Next Steps (specific troubleshooting checks, CLI commands, or configs)
+
+Response Mode: {mode.upper()}
+- BEGINNER: Simple, high-level explanation without technical jargon.
+- INTERMEDIATE: Technical explanation with standard SIP/RTP terms.
+- EXPERT: Deep, professional engineering level explanation detailing SIP headers, codes, RTP jitter, packet losses, etc.
+
+Use a professional, helpful engineering tone.
+Return response in Markdown format.
+"""
+
+    context_prompt = f"""
+---
+ANALYSIS CONTEXT PACKAGE:
+{json.dumps(analysis_context, indent=2)}
+---
+"""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": context_prompt}
+    ]
+
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2,
+            max_tokens=1500
+        )
+        content = response.choices[0].message.content if response.choices else ""
+        reply = content.strip()
+        
+        # Clean up outer markdown code fencing block if returned by LLM
+        if reply.startswith("```markdown"):
+            reply = reply[11:].strip()
+            if reply.endswith("```"):
+                reply = reply[:-3].strip()
+        elif reply.startswith("```"):
+            reply = reply[3:].strip()
+            if reply.endswith("```"):
+                reply = reply[:-3].strip()
+                
+        return reply
+    except Exception as e:
+        logger.error(f"Error calling LLM for analysis chat: {e}")
+        return f"Error: Unable to process request. (Detail: {str(e)})"
+
+
+def generate_suggested_questions(
+    result_json: Dict[str, Any],
+    job_type: str
+) -> List[str]:
+    api_key = settings.OPENAI_API_KEY
+    base_url = settings.OPENAI_BASE_URL
+    model = settings.OPENAI_MODEL
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+    )
+
+    system_prompt = """
+You are a VoIP engineer. Review the analysis summary and output 5 to 8 suggested troubleshooting questions that a user might want to ask about this report.
+Return ONLY a JSON list of strings. Do not return markdown. Do not return any text other than the JSON list.
+Example output:
+[
+  "What is the most likely root cause?",
+  "Why is the media health score low?"
+]
+"""
+    try:
+        # Slice result_json serialization to keep prompt size reasonable
+        truncated_json_str = json.dumps(result_json)[:4000]
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": truncated_json_str}
+            ],
+            temperature=0.5,
+            max_tokens=300
+        )
+        content = response.choices[0].message.content if response.choices else ""
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.replace("```json", "").replace("```", "").strip()
+        questions = json.loads(content)
+        if isinstance(questions, list):
+            return [str(q) for q in questions[:10]]
+    except Exception as e:
+        logger.warning(f"Failed to generate suggested questions via LLM: {e}")
+
+    # Fallbacks
+    if job_type == "pcap":
+        return [
+            "What is the most likely root cause?",
+            "Why is the call quality score low?",
+            "Explain the NAT issues detected.",
+            "Which RTP stream had the highest packet loss?",
+            "What should I investigate first to fix this call?"
+        ]
+    else:
+        return [
+            "What is the most likely root cause?",
+            "Why is the media health score low?",
+            "Explain the critical findings in this log.",
+            "Which SIP response code caused most failures?",
+            "What are the immediate recommended steps?"
+        ]

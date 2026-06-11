@@ -12,13 +12,15 @@ import {
   Volume2, 
   Sliders,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  MessageSquare
 } from "lucide-react";
 
 import { Job, UnifiedAnalysisResult } from "./types";
 import CallFlowLadder from "./components/CallFlowLadder";
 import AiAnalysisReport from "./components/AiAnalysisReport";
 import LogAnalysisReport from "./components/LogAnalysisReport";
+import AnalysisChatPanel from "./components/AnalysisChatPanel";
 
 export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -29,6 +31,7 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isLoadingResult, setIsLoadingResult] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   
   const [activeTab, setActiveTab] = useState<"ai" | "ladder" | "streams">("ai");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +116,7 @@ export default function App() {
   const handleSelectJob = (job: Job) => {
     setActiveJob(job);
     setActiveResult(null);
+    setIsChatOpen(false);
     if (job.status === "completed") {
       fetchResult(job.job_id, job.job_type);
     }
@@ -144,6 +148,7 @@ export default function App() {
       setJobs(prev => [jobResponse, ...prev]);
       setActiveJob(jobResponse);
       setActiveResult(null);
+      setIsChatOpen(false);
       setActiveTab("ai");
     } catch (e: any) {
       setUploadError(e.message || "An unexpected communication error occurred.");
@@ -215,7 +220,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none antialiased">
+    <div className="h-screen bg-slate-50 text-slate-900 flex flex-col font-sans select-none antialiased overflow-hidden">
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 shadow-sm animate-pulse">
@@ -229,7 +234,7 @@ export default function App() {
               </span>
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Production-ready PCAP SIP parser & Large Language Model diagnostic panel
+              Production-ready PCAP SIP parser, Log Diagnostic Console & Interactive AI Chat Assistant
             </p>
           </div>
         </div>
@@ -360,66 +365,79 @@ export default function App() {
           </div>
         </aside>
 
-        <main className="lg:col-span-3 bg-slate-50 p-6 overflow-y-auto flex flex-col gap-6">
-          
-          {!activeJob ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center max-w-xl mx-auto space-y-6">
-              <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-400">
-                <Network className="w-12 h-12" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-                  VoIP PCAP Analytics Engine Online
-                </h2>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  We specialize in SIP signal flows and RTP media analysis. Upload a packet capture file (or click one from the history panel) to audit call setup quality, inspect NAT traversal errors, find stream interruptions, and generate AI-powered root-cause reports instantly.
-                </p>
-              </div>
-
-              <div className="p-4 border border-slate-200 bg-slate-100 rounded-xl w-full flex items-center justify-between text-left">
-                <div>
-                  <h4 className="text-xs font-bold text-emerald-600 font-mono uppercase tracking-wider">
-                    Quick Simulation Check
-                  </h4>
-                  <p className="text-[10px] text-neutral-500 mt-0.5">
-                    Don't have a PCAP file? Drop a text / blank file to load standard simulation data.
+        <main className="lg:col-span-3 bg-slate-50 overflow-hidden flex flex-row">
+          <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-6">
+            {!activeJob ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center max-w-xl mx-auto space-y-6">
+                <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-400">
+                  <Network className="w-12 h-12" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                    VoIP PCAP Analytics Engine Online
+                  </h2>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    We specialize in SIP signal flows and RTP media analysis. Upload a packet capture file (or click one from the history panel) to audit call setup quality, inspect NAT traversal errors, find stream interruptions, and generate AI-powered root-cause reports instantly.
                   </p>
                 </div>
-                <button 
-                  onClick={() => {
-                    const file = new File(["dummy voip data"], "simulation_trace.pcap", { type: "application/octet-stream" });
-                    uploadFile(file);
-                  }}
-                  className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-lg hover:bg-emerald-500/20 transition-all font-mono whitespace-nowrap"
-                >
-                  Load Demo Trace
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6 flex-grow flex flex-col">
-              
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono text-slate-600">Active Audit Trace:</span>
-                    <h2 className="text-sm font-bold text-slate-900 font-mono truncate max-w-xs" title={activeJob.filename}>
-                      {activeJob.filename}
-                    </h2>
-                    {renderStatusBadge(activeJob.status)}
+
+                <div className="p-4 border border-slate-200 bg-slate-100 rounded-xl w-full flex items-center justify-between text-left">
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-600 font-mono uppercase tracking-wider">
+                      Quick Simulation Check
+                    </h4>
+                    <p className="text-[10px] text-neutral-550 mt-0.5">
+                      Don't have a PCAP file? Drop a text / blank file to load standard simulation data.
+                    </p>
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1 font-mono">
-                    Session UID: {activeJob.job_id} | Timestamps: {new Date(activeJob.created_at).toLocaleString()}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 border border-slate-300 rounded-lg">
-                    State:{" "}
-                    <strong className="text-slate-900 capitalize">{activeJob.status}</strong>
-                  </span>
+                  <button 
+                    onClick={() => {
+                      const file = new File(["dummy voip data"], "simulation_trace.pcap", { type: "application/octet-stream" });
+                      uploadFile(file);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-lg hover:bg-emerald-500/20 transition-all font-mono whitespace-nowrap"
+                  >
+                    Load Demo Trace
+                  </button>
                 </div>
               </div>
+            ) : (
+              <div className="space-y-6 flex-grow flex flex-col">
+                
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono text-slate-600">Active Audit Trace:</span>
+                      <h2 className="text-sm font-bold text-slate-900 font-mono truncate max-w-xs" title={activeJob.filename}>
+                        {activeJob.filename}
+                      </h2>
+                      {renderStatusBadge(activeJob.status)}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                      Session UID: {activeJob.job_id} | Timestamps: {new Date(activeJob.created_at).toLocaleString()}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {activeJob.status === "completed" && (
+                      <button
+                        onClick={() => setIsChatOpen(!isChatOpen)}
+                        className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg text-xs font-semibold transition-all ${
+                          isChatOpen
+                            ? "bg-emerald-600 border-emerald-750 text-white hover:text-white active:text-white focus:text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-sm"
+                            : "bg-white border-slate-300 text-slate-700 hover:text-slate-900 focus:text-slate-900 active:text-slate-900 hover:bg-slate-50 focus:bg-slate-50 active:bg-slate-100 shadow-sm"
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        {isChatOpen ? "Close Assistant" : "Chat with AI"}
+                      </button>
+                    )}
+                    <span className="text-xs font-mono text-slate-700 bg-slate-100 px-3 py-1.5 border border-slate-300 rounded-lg">
+                      State:{" "}
+                      <strong className="text-slate-900 capitalize">{activeJob.status}</strong>
+                    </span>
+                  </div>
+                </div>
 
               {activeJob.status === "failed" && (
                 <div className="p-5 border border-rose-500/20 bg-rose-500/5 rounded-xl space-y-2">
@@ -826,6 +844,14 @@ export default function App() {
               )}
 
             </div>
+          )}
+          </div>
+          {isChatOpen && activeJob && activeJob.status === "completed" && (
+            <AnalysisChatPanel 
+              job={activeJob} 
+              activeResult={activeResult} 
+              onClose={() => setIsChatOpen(false)} 
+            />
           )}
         </main>
       </div>

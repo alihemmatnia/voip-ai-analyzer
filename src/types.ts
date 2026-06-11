@@ -139,3 +139,24 @@ export interface Job {
   created_at: string;
   completed_at?: string;
 }
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
+
+export interface ChatHistoryResponse {
+  session_id: string;
+  suggested_questions: string[];
+  history: ChatMessage[];
+}
+
+export interface ChatRequest {
+  message: string;
+  mode: "beginner" | "intermediate" | "expert";
+}
+
+export interface ChatResponse {
+  response: string;
+}

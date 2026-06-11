@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 
 from db.database import get_db
-from models.job import Job, AnalysisResult, LogAnalysisResult
+from models.job import Job, AnalysisResult, LogAnalysisResult, ChatSession, ChatMessage
 from schemas.job import JobResponse, AnalysisResultResponse
 from core.config import settings
 from services.analyzer import process_voip_pcap_background
 from log_analyzers.service import process_voip_log_background
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter(prefix="/v1")
 
@@ -214,3 +216,182 @@ def get_job_results(job_id: str, db: Session = Depends(get_db)):
         status=job.status,
         result=parsed_result
     )
+
+
+class ChatRequest(BaseModel):
+    message: str
+    mode: Optional[str] = "expert"
+
+
+@router.post("/analysis/{analysis_id}/chat")
+def post_analysis_chat(
+    analysis_id: str,
+    payload: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == analysis_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Analysis job not found.")
+        
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Cannot chat about an analysis that has not completed.")
+
+    # Self-healing Session Initializer
+    session = db.query(ChatSession).filter(ChatSession.analysis_id == analysis_id).first()
+    if not session:
+        # Load results to generate questions
+        from llm.llm_client import generate_suggested_questions
+        result_json = {}
+        if job.job_type == "pcap":
+            res_rec = db.query(AnalysisResult).filter(AnalysisResult.job_id == analysis_id).first()
+            if res_rec:
+                result_json = json.loads(res_rec.result_json)
+        else:
+            res_rec = db.query(LogAnalysisResult).filter(LogAnalysisResult.job_id == analysis_id).first()
+            if res_rec:
+                result_json = json.loads(res_rec.summary_json)
+                
+        questions = generate_suggested_questions(result_json, job.job_type)
+        session = ChatSession(
+            analysis_id=analysis_id,
+            suggested_questions=json.dumps(questions)
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    # 1. Build context package
+    context = {}
+    if job.job_type == "pcap":
+        res_rec = db.query(AnalysisResult).filter(AnalysisResult.job_id == analysis_id).first()
+        if res_rec:
+            try:
+                full_data = json.loads(res_rec.result_json)
+                pcap_summary = full_data.get("pcap_summary", {})
+                ai_analysis = full_data.get("ai_analysis", {})
+                
+                context = {
+                    "root_causes": ai_analysis.get("root_causes", []),
+                    "critical_findings": ai_analysis.get("critical_findings", []),
+                    "detected_issues": ai_analysis.get("detected_issues", []),
+                    "timeline": pcap_summary.get("call_flow_ladder", []),
+                    "health_scores": {
+                        "call_quality_score": pcap_summary.get("call_quality_score"),
+                        "media_stability_score": pcap_summary.get("media_stability_score"),
+                        "packet_loss_percent": pcap_summary.get("packet_loss_percent"),
+                        "avg_jitter_ms": pcap_summary.get("avg_jitter_ms")
+                    },
+                    "recommendations": ai_analysis.get("recommendations", []),
+                    "raw_summary_data": pcap_summary
+                }
+            except Exception:
+                raise HTTPException(status_code=500, detail="Corrupted PCAP result record.")
+    else:
+        res_rec = db.query(LogAnalysisResult).filter(LogAnalysisResult.job_id == analysis_id).first()
+        if res_rec:
+            try:
+                full_data = json.loads(res_rec.summary_json)
+                log_summary = full_data.get("log_summary", {})
+                ai_analysis = full_data.get("ai_analysis", {})
+                
+                context = {
+                    "root_causes": ai_analysis.get("root_causes", []),
+                    "critical_findings": ai_analysis.get("critical_findings", []),
+                    "timeline": ai_analysis.get("incident_timeline", []) or log_summary.get("call_flow_ladder", []),
+                    "health_scores": ai_analysis.get("health_scores", {}),
+                    "affected_services": ai_analysis.get("affected_services", []),
+                    "recommendations": ai_analysis.get("recommendations", {}),
+                    "raw_summary_data": log_summary
+                }
+            except Exception:
+                raise HTTPException(status_code=500, detail="Corrupted Log result record.")
+
+    # 2. Query chat session history
+    past_messages = db.query(ChatMessage).filter(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at.asc()).all()
+    history = [{"role": msg.role, "content": msg.content} for msg in past_messages]
+
+    # Save user message
+    user_msg = ChatMessage(
+        session_id=session.id,
+        role="user",
+        content=payload.message
+    )
+    db.add(user_msg)
+    
+    # Append the new user message to history context
+    history.append({"role": "user", "content": payload.message})
+
+    # 3. Call LLM to get answer
+    from llm.llm_client import answer_analysis_chat_message
+    assistant_reply = answer_analysis_chat_message(
+        chat_history=history,
+        analysis_context=context,
+        mode=payload.mode or "expert"
+    )
+
+    # Save assistant response
+    assistant_msg = ChatMessage(
+        session_id=session.id,
+        role="assistant",
+        content=assistant_reply
+    )
+    db.add(assistant_msg)
+    db.commit()
+
+    return {"response": assistant_reply}
+
+
+@router.get("/analysis/{analysis_id}/chat/history")
+def get_analysis_chat_history(
+    analysis_id: str,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == analysis_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Analysis job not found.")
+
+    session = db.query(ChatSession).filter(ChatSession.analysis_id == analysis_id).first()
+    
+    # Self-healing Session Initializer
+    if not session:
+        result_json = {}
+        if job.status == "completed":
+            if job.job_type == "pcap":
+                res_rec = db.query(AnalysisResult).filter(AnalysisResult.job_id == analysis_id).first()
+                if res_rec:
+                    result_json = json.loads(res_rec.result_json)
+            else:
+                res_rec = db.query(LogAnalysisResult).filter(LogAnalysisResult.job_id == analysis_id).first()
+                if res_rec:
+                    result_json = json.loads(res_rec.summary_json)
+                    
+        from llm.llm_client import generate_suggested_questions
+        questions = generate_suggested_questions(result_json, job.job_type)
+        session = ChatSession(
+            analysis_id=analysis_id,
+            suggested_questions=json.dumps(questions)
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    # Get messages
+    past_messages = db.query(ChatMessage).filter(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at.asc()).all()
+    
+    try:
+        suggested = json.loads(session.suggested_questions) if session.suggested_questions else []
+    except Exception:
+        suggested = []
+
+    return {
+        "session_id": session.id,
+        "suggested_questions": suggested,
+        "history": [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "created_at": msg.created_at.isoformat()
+            }
+            for msg in past_messages
+        ]
+    }

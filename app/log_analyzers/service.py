@@ -42,8 +42,21 @@ def process_voip_log_background(job_id: str, file_path: str):
             detected_platform=log_summary.get("platform", "Unknown"),
             summary_json=json.dumps(combined_result),
         )
-
         db.add(db_result)
+
+        # Pre-generate suggested chat questions
+        try:
+            from llm.llm_client import generate_suggested_questions
+            from models.job import ChatSession
+            questions = generate_suggested_questions(combined_result, "log")
+            chat_session = ChatSession(
+                analysis_id=job_id,
+                suggested_questions=json.dumps(questions)
+            )
+            db.add(chat_session)
+        except Exception as chat_err:
+            logger.warning(f"Failed to initialize chat session in background for log job {job_id}: {chat_err}")
+
         job.status = "completed"
         job.completed_at = datetime.datetime.utcnow()
         db.commit()

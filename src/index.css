@@ -44,3 +44,20 @@ body {
 .hover\:bg-neutral-900\/40:hover { background-color: rgba(241, 245, 249, 0.4) !important; }
 .hover\:bg-neutral-900\/60:hover { background-color: rgba(241, 245, 249, 0.6) !important; }
 
+/* Custom scrollbar utility */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+
