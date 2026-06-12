@@ -40,10 +40,20 @@ async def upload_pcap(
     file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
 
     try:
-        with open(file_path, "wb") as buffer:
+        raw_file_path = file_path + ".raw"
+        with open(raw_file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
+            
+        # Encrypt the raw file to the final destination and remove the raw file
+        from core.security import encrypt_file
+        if not encrypt_file(raw_file_path, file_path):
+            raise Exception("Encryption engine failed to secure the file.")
+        
+        os.remove(raw_file_path)
     except Exception as e:
+        if os.path.exists(raw_file_path):
+            os.remove(raw_file_path)
         raise HTTPException(status_code=500, detail=f"Failed to record PCAP to system block storage: {str(e)}")
 
     job_record = Job(
@@ -86,10 +96,20 @@ async def upload_log(
     file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
 
     try:
-        with open(file_path, "wb") as buffer:
+        raw_file_path = file_path + ".raw"
+        with open(raw_file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
+            
+        # Encrypt the raw file to the final destination and remove the raw file
+        from core.security import encrypt_file
+        if not encrypt_file(raw_file_path, file_path):
+            raise Exception("Encryption engine failed to secure the file.")
+            
+        os.remove(raw_file_path)
     except Exception as e:
+        if os.path.exists(raw_file_path):
+            os.remove(raw_file_path)
         raise HTTPException(status_code=500, detail=f"Failed to save log file: {str(e)}")
 
     job_record = Job(
@@ -237,7 +257,17 @@ def get_job_audio(job_id: str, ssrc: str, codec: str = "PCMU", db: Session = Dep
         raise HTTPException(status_code=404, detail="Original PCAP file not found on disk.")
         
     from parsers.audio_extractor import extract_audio_from_pcap
-    wav_bytes = extract_audio_from_pcap(file_path, ssrc, codec)
+    from core.security import decrypt_file
+    
+    temp_file_path = file_path + ".decrypted"
+    if not decrypt_file(file_path, temp_file_path):
+        raise HTTPException(status_code=500, detail="Failed to decrypt PCAP file for audio extraction.")
+        
+    try:
+        wav_bytes = extract_audio_from_pcap(temp_file_path, ssrc, codec)
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
     
     if not wav_bytes:
         raise HTTPException(status_code=400, detail="Failed to extract audio or unsupported codec.")

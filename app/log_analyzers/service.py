@@ -23,7 +23,17 @@ def process_voip_log_background(job_id: str, file_path: str):
         job.status = "processing"
         db.commit()
 
-        log_summary = parse_log_file(file_path)
+        import os
+        from core.security import decrypt_file
+        temp_file_path = file_path + ".decrypted"
+        if not decrypt_file(file_path, temp_file_path):
+            raise Exception("Failed to decrypt log file for analysis.")
+            
+        try:
+            log_summary = parse_log_file(temp_file_path)
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
         
         # Optimize size for LLM prompt context while saving full parsed lines in DB
         ai_input_summary = log_summary.copy()

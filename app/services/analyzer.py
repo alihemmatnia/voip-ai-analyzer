@@ -27,7 +27,17 @@ def process_voip_pcap_background(job_id: str, file_path: str):
         db.commit()
 
         logger.info(f"Running PCAP parser for Job {job_id} at {file_path}")
-        pcap_summary = parse_pcap_file(file_path)
+        import os
+        from core.security import decrypt_file
+        temp_file_path = file_path + ".decrypted"
+        if not decrypt_file(file_path, temp_file_path):
+            raise Exception("Failed to decrypt PCAP file for analysis.")
+            
+        try:
+            pcap_summary = parse_pcap_file(temp_file_path)
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
         
         logger.info(f"Requesting AI analysis for Job {job_id}")
         ai_analysis = analyze_voip_summary_with_ai(pcap_summary)
