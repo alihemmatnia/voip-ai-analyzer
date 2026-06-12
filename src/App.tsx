@@ -798,6 +798,7 @@ export default function App() {
                                       <th className="p-3 text-right">Loss Rate</th>
                                       <th className="p-3 text-right">Jitter</th>
                                       <th className="p-3 text-center">Codec</th>
+                                      <th className="p-3 text-center">Playback</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-neutral-900 text-neutral-300">
@@ -817,6 +818,15 @@ export default function App() {
                                           <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-[11px] font-semibold text-neutral-350">
                                             {stream.codec}
                                           </span>
+                                        </td>
+                                        <td className="p-3 text-center flex justify-center items-center h-full pt-4">
+                                          {stream.codec.includes("PCM") || stream.codec === "0" || stream.codec === "8" ? (
+                                            <audio controls className="h-7 w-48 outline-none rounded-full grayscale invert opacity-80 hover:opacity-100 transition-opacity">
+                                              <source src={`/api/v1/results/${activeJob?.job_id}/audio/${stream.ssrc}?codec=${encodeURIComponent(stream.codec)}`} type="audio/wav" />
+                                            </audio>
+                                          ) : (
+                                            <span className="text-[10px] text-neutral-500 italic block mt-1">N/A</span>
+                                          )}
                                         </td>
                                       </tr>
                                     ))}

@@ -2,7 +2,7 @@ import os
 import uuid
 import datetime
 import json
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 
@@ -216,6 +216,33 @@ def get_job_results(job_id: str, db: Session = Depends(get_db)):
         status=job.status,
         result=parsed_result
     )
+
+
+@router.get("/results/{job_id}/audio/{ssrc}")
+def get_job_audio(job_id: str, ssrc: str, codec: str = "PCMU", db: Session = Depends(get_db)):
+    """
+    Extracts RTP payloads for a given SSRC, decodes them, and returns a playable WAV file.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="VoIP analysis job not found.")
+    
+    if job.job_type != "pcap":
+        raise HTTPException(status_code=400, detail="Audio extraction is only available for PCAP files.")
+        
+    safe_filename = f"{job_id}_{job.filename}"
+    file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Original PCAP file not found on disk.")
+        
+    from parsers.audio_extractor import extract_audio_from_pcap
+    wav_bytes = extract_audio_from_pcap(file_path, ssrc, codec)
+    
+    if not wav_bytes:
+        raise HTTPException(status_code=400, detail="Failed to extract audio or unsupported codec.")
+        
+    return Response(content=wav_bytes, media_type="audio/wav")
 
 
 class ChatRequest(BaseModel):
