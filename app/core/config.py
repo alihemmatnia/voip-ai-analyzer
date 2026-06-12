@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "http://localhost:1234/v1"
     OPENAI_MODEL: str = "gemma-3-12b-it"
 
+    # Database Encryption Key (base64 encoded 32-byte key)
+    # Required field, loaded from .env
+    ENCRYPTION_KEY: str
+
     model_config = ConfigDict(
         env_file=str(ENV_FILE),
         env_file_encoding="utf-8",

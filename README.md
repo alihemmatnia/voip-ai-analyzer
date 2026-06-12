@@ -237,6 +237,10 @@ UPLOAD_DIR=./storage/uploads
 OPENAI_API_KEY=your_api_key_here
 OPENAI_BASE_URL=http://localhost:1234/v1
 OPENAI_MODEL=gemma-3-12b-it
+
+# Database Encryption Key (base64 encoded 32-byte fernet key)
+# Generate one using: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+ENCRYPTION_KEY="your-secure-base64-fernet-key-here="
 ```
 
 **Note**: The app uses a local LLM endpoint by default. To use OpenAI's API, update the configuration accordingly.
