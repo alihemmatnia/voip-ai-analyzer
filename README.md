@@ -8,6 +8,8 @@ The application allows users to upload PCAP files and VoIP log files, analyze SI
 
 * **PCAP Signal Analytics**: Parse packet captures (`.pcap`, `.pcapng`, `.cap`) to analyze UDP packets, compile Jitter/Packet Loss stats, and map negotiated codecs.
 * **Unified Log Diagnostics**: Upload system logs (`.log`, `.txt`) to automatically auto-detect platforms (Asterisk, FreeSWITCH, Kamailio, OpenSIPS, SBC) and parse severity lines.
+* **Audio Extraction & Playback**: Extract RTP media payloads directly from PCAP traces, decode standard G.711 (PCMU/PCMA) codecs, and serve linear PCM `.wav` audio for in-browser playback.
+* **End-to-End Encryption**: Automatically encrypts large physical uploads (PCAPs/Logs) with a secure AES-CTR streaming cipher and utilizes custom SQLAlchemy decorators to secure all database rows (passwords, diagnostic results, chat history) at rest.
 * **Interactive AI Chat Assistant**: Consult a virtual Senior VoIP Engineer (15+ Years Experience) side-by-side with reports, selecting from Beginner, Intermediate, or Expert response modes.
 * **Automated Suggested Questions**: Instantly queries custom troubleshooting recommendations upon analysis completion to guide user investigation.
 * **Incident Timeline Correlation**: Reconstructs the chronological flow of errors, mapping related authentication mismatches, registry drops, gateway failures, and carrier disconnects.
@@ -205,6 +207,7 @@ You can run the complete stack (both Frontend and Backend) using Docker and Dock
 | ------ | --------------------------- | -------------------------------- |
 | POST   | `/api/v1/upload`            | Upload PCAP file for analysis    |
 | GET    | `/api/v1/results/{job_id}`  | Get PCAP analysis results        |
+| GET    | `/api/v1/results/{job_id}/audio/{ssrc}` | Extract and download RTP audio payload as `.wav` |
 
 ### Log Analysis
 
@@ -212,6 +215,14 @@ You can run the complete stack (both Frontend and Backend) using Docker and Dock
 | ------ | ---------------------------------- | -------------------------------- |
 | POST   | `/api/v1/logs/upload`              | Upload log file for analysis     |
 | GET    | `/api/v1/logs/results/{job_id}`    | Get log analysis results         |
+
+### PBX Server Management
+
+| Method | Endpoint                           | Description                      |
+| ------ | ---------------------------------- | -------------------------------- |
+| POST   | `/api/v1/servers`                  | Create a new PBX server profile  |
+| GET    | `/api/v1/servers`                  | List all PBX servers             |
+| GET    | `/api/v1/servers/{server_id}`      | Get PBX server configuration     |
 
 ### AI Chat Assistant
 
