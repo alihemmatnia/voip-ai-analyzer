@@ -8,9 +8,12 @@ async function startServer() {
   const PORT = 3000;
 
   const handleProxy = (req: express.Request, res: express.Response) => {
+    const backendHost = process.env.BACKEND_HOST || "127.0.0.1";
+    const backendPort = Number(process.env.BACKEND_PORT) || 8000;
+
     const options = {
-      hostname: "127.0.0.1",
-      port: 8000,
+      hostname: backendHost,
+      port: backendPort,
       path: req.originalUrl,
       method: req.method,
       headers: req.headers

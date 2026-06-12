@@ -90,6 +90,29 @@ http://localhost:5173
 
 If the backend runs on a different port, update the frontend API configuration accordingly.
 
+### Running with Docker
+
+You can run the complete stack (both Frontend and Backend) using Docker and Docker Compose. This is ideal for deploying on a Linux server.
+
+1. **Configure Environment Variables**:
+   Create a `.env` file in the project root (you can copy `.env.example` as a starting point) and configure your LLM settings:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Build and Run with Docker Compose**:
+   From the project root, run:
+   ```bash
+   docker compose up --build -d
+   ```
+
+3. **Access the Application**:
+   - **Frontend Web UI**: Open `http://localhost:3000` in your browser.
+   - **Backend API Docs (Swagger)**: Open `http://localhost:3000/docs` (proxied) or `http://localhost:8000/docs` (direct) in your browser.
+
+4. **Data Persistence**:
+   SQLite database files and uploaded PCAPs/logs will be stored inside the named Docker volume `voip_storage` (mapped to `/app/storage` internally in the backend container) so they persist across restarts.
+
 ## Usage Guide
 
 ### Analyzing PCAP Files
