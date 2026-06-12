@@ -6,6 +6,7 @@ import logging
 from sqlalchemy import text
 from core.config import settings
 from db.database import engine, Base
+from models.server import PBXServer
 from api.endpoints import router as api_router
 
 logging.basicConfig(
@@ -51,7 +52,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from api.servers import router as servers_router
+
 app.include_router(api_router, prefix="/api")
+app.include_router(servers_router, prefix="/api/v1")
 
 @app.get("/")
 def redirect_to_docs():

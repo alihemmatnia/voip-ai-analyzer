@@ -13,7 +13,9 @@ import {
   Sliders,
   ShieldCheck,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  Server,
+  Terminal
 } from "lucide-react";
 
 import { Job, UnifiedAnalysisResult } from "./types";
@@ -21,8 +23,10 @@ import CallFlowLadder from "./components/CallFlowLadder";
 import AiAnalysisReport from "./components/AiAnalysisReport";
 import LogAnalysisReport from "./components/LogAnalysisReport";
 import AnalysisChatPanel from "./components/AnalysisChatPanel";
+import LiveSystemsPanel from "./components/LiveSystemsPanel";
 
 export default function App() {
+  const [mainView, setMainView] = useState<"analysis" | "live">("analysis");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [activeResult, setActiveResult] = useState<UnifiedAnalysisResult | null>(null);
@@ -126,10 +130,53 @@ export default function App() {
     setIsUploading(true);
     setUploadError(null);
     
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    
+    // Check for VoIP packets in PCAP files before uploading
+    if ([".pcap", ".pcapng", ".cap"].includes(ext)) {
+      try {
+        // Read the first 5MB to scan for SIP signatures
+        const chunk = file.slice(0, 1024 * 1024 * 5);
+        const buffer = await chunk.arrayBuffer();
+        
+        const bytes = new Uint8Array(buffer);
+        const textChunk = new TextDecoder("ascii", { fatal: false }).decode(bytes);
+        
+        // Match common SIP patterns
+        const hasVoip = /SIP\/2\.0|INVITE sip:|REGISTER sip:|OPTIONS sip:|BYE sip:/i.test(textChunk);
+        
+        if (!hasVoip) {
+          setUploadError("The selected PCAP file does not appear to contain valid VoIP (SIP) packets. Please check your capture.");
+          setIsUploading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("Failed to pre-scan PCAP file:", err);
+        // If pre-scan fails, we'll still let the backend try
+      }
+    } else if ([".log", ".txt"].includes(ext)) {
+      try {
+        // Read the first 2MB to scan for VoIP log patterns
+        const chunk = file.slice(0, 1024 * 1024 * 2);
+        const buffer = await chunk.arrayBuffer();
+        const textChunk = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+        
+        // Match common VoIP platform signatures and SIP methods
+        const hasVoipLog = /asterisk|freeswitch|kamailio|opensips|sbc|sip|invite|register/i.test(textChunk);
+        
+        if (!hasVoipLog) {
+          setUploadError("The selected log file does not appear to contain VoIP system logs (Asterisk, FreeSWITCH, Kamailio, OpenSIPS, etc.). Please check your file.");
+          setIsUploading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("Failed to pre-scan log file:", err);
+      }
+    }
+
     const formData = new FormData();
     formData.append("file", file);
 
-    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     const endpoint = [".log", ".txt"].includes(ext) ? "/api/v1/logs/upload" : "/api/v1/upload";
 
     try {
@@ -239,7 +286,29 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 mr-2">
+            <button
+              onClick={() => setMainView("analysis")}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                mainView === "analysis"
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" /> File Analysis
+            </button>
+            <button
+              onClick={() => setMainView("live")}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                mainView === "live"
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Server className="w-3.5 h-3.5" /> Live Systems
+            </button>
+          </div>
           <button 
             onClick={fetchJobs}
             className="p-1.5 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-neutral-800 rounded-lg transition-all"
@@ -250,6 +319,11 @@ export default function App() {
         </div>
       </header>
 
+      {mainView === "live" ? (
+        <div className="flex-1 overflow-hidden">
+          <LiveSystemsPanel />
+        </div>
+      ) : (
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 overflow-hidden">
         
         <aside className="lg:col-span-1 border-r border-slate-200 bg-slate-50 p-5 flex flex-col gap-6 overflow-y-auto">
@@ -855,6 +929,7 @@ export default function App() {
           )}
         </main>
       </div>
+      )}
     </div>
   );
 }

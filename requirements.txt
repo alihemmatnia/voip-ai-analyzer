@@ -7,3 +7,4 @@ scapy
 pyshark
 openai
 python-multipart
+paramiko
